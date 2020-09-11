@@ -1,8 +1,8 @@
 {
-  "name": "react-native-biopass",
-  "version": "1.0.0-alpha.2",
+  "name": "react-native-biopass-updated",
+  "version": "1.0.0-alpha.1",
   "license": "MIT",
-  "repository": "LinusU/react-native-biopass",
+  "repository": "ankitsinghh121/react-native-biopass-updated",
   "keywords": [
     "face-id",
     "fingerprint",
@@ -11,6 +11,6 @@
     "touch-id"
   ],
   "peerDependencies": {
-    "react-native": ">=0.56"
+    "react-native": ">=0.60"
   }
 }

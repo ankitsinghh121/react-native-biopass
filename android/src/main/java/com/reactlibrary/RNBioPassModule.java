@@ -1,15 +1,39 @@
 package com.reactlibrary;
 
+import android.app.Activity;
+import android.content.Context;
+import android.content.SharedPreferences;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
+import android.content.pm.PackageManager.NameNotFoundException;
+import android.content.res.ColorStateList;
+import android.content.res.Resources;
+import android.hardware.fingerprint.FingerprintManager;
+import android.os.Build;
+import android.security.keystore.KeyGenParameterSpec;
+import android.security.keystore.KeyProperties;
+import android.util.Base64;
 import android.util.Log;
-
-import com.reactlibrary.RNBioPassDialog;
-
+import android.util.TypedValue;
+import android.view.Gravity;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+import androidx.biometric.BiometricManager;
+import androidx.biometric.BiometricPrompt;
+import androidx.core.hardware.fingerprint.FingerprintManagerCompat;
+import com.facebook.react.bridge.Callback;
+import com.facebook.react.bridge.Promise;
+import com.facebook.react.bridge.ReactApplicationContext;
+import com.facebook.react.bridge.ReactContextBaseJavaModule;
+import com.facebook.react.bridge.ReactMethod;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.io.UnsupportedEncodingException;
 import java.nio.charset.Charset;
-import java.security.cert.CertificateException;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.Key;
@@ -21,48 +45,17 @@ import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
 import java.security.PrivateKey;
 import java.security.PublicKey;
+import java.security.UnrecoverableKeyException;
+import java.security.cert.CertificateException;
 import java.security.spec.AlgorithmParameterSpec;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.KeySpec;
 import java.security.spec.X509EncodedKeySpec;
-import java.security.UnrecoverableKeyException;
-
 import javax.crypto.Cipher;
 import javax.crypto.CipherInputStream;
 import javax.crypto.CipherOutputStream;
 import javax.crypto.NoSuchPaddingException;
 import javax.crypto.spec.IvParameterSpec;
-
-import com.facebook.react.bridge.Promise;
-import com.facebook.react.bridge.ReactApplicationContext;
-import com.facebook.react.bridge.ReactContextBaseJavaModule;
-import com.facebook.react.bridge.ReactMethod;
-import com.facebook.react.bridge.Callback;
-
-import android.app.Activity;
-import android.content.Context;
-import android.content.res.ColorStateList;
-import android.content.res.Resources;
-import android.content.SharedPreferences;
-import android.os.Build;
-import android.security.keystore.KeyGenParameterSpec;
-import android.security.keystore.KeyProperties;
-import android.util.Base64;
-import android.util.TypedValue;
-import android.view.Gravity;
-import android.widget.ImageView;
-import android.widget.LinearLayout;
-import android.widget.TextView;
-
-import android.content.pm.ApplicationInfo;
-import android.content.pm.PackageManager;
-import android.content.pm.PackageManager.NameNotFoundException;
-
-import android.support.v4.content.ContextCompat;
-import android.support.v4.widget.ImageViewCompat;
-import android.support.design.widget.BottomSheetDialog;
-
-import android.hardware.fingerprint.FingerprintManager;
 
 class PromiseRejection extends Exception {
   private String code;
@@ -82,9 +75,14 @@ public class RNBioPassModule extends ReactContextBaseJavaModule {
   private static final String DEFAULT_SERVICE = "RN_BIOPASS_DEFAULT_ALIAS";
 
   private static final String KEYSTORE_TYPE = "AndroidKeyStore";
-  private static final String ENCRYPTION_ALGORITHM = KeyProperties.KEY_ALGORITHM_RSA;
-  private static final String ENCRYPTION_BLOCK_MODE = KeyProperties.BLOCK_MODE_ECB;
-  private static final String ENCRYPTION_PADDING = KeyProperties.ENCRYPTION_PADDING_RSA_PKCS1;
+  private static final String ENCRYPTION_ALGORITHM =
+    KeyProperties.KEY_ALGORITHM_RSA;
+  private static final String ENCRYPTION_BLOCK_MODE =
+    KeyProperties.BLOCK_MODE_ECB;
+  private static final String ENCRYPTION_PADDING =
+    KeyProperties.ENCRYPTION_PADDING_RSA_PKCS1;
+
+  private static final String Tag = "bio";
 
   private final ReactApplicationContext reactContext;
 
@@ -99,9 +97,96 @@ public class RNBioPassModule extends ReactContextBaseJavaModule {
   }
 
   @ReactMethod
-  public void store(String password, final Promise promise) {
+  public void store(
+    String promptText,
+    final String password,
+    final Promise promise
+  ) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-      promise.reject("NOT_SUPPORTED", "BioPass is not supported on this version of Android");
+      promise.reject(
+        "NOT_SUPPORTED",
+        "BioPass is not supported on this version of Android"
+      );
+      return;
+    }
+    try {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        final BiometricManager biometricManager = BiometricManager.from(
+          this.reactContext
+        );
+        if (
+          biometricManager.canAuthenticate() ==
+          BiometricManager.BIOMETRIC_SUCCESS
+        ) {
+          RNBioPrompt prompt = new RNBioPrompt(this.reactContext, promptText);
+          prompt.authenticate(
+            new RNBioPrompt.AuthenticateCallback() {
+
+              @Override
+              public void reject(Throwable e) {
+                String replaceString = e
+                  .toString()
+                  .replace("java.lang.Exception: ", "");
+                promise.reject(replaceString);
+              }
+
+              @Override
+              public void resolve() {
+                try {
+                  actuallyStore(password, promise);
+                } catch (Exception e) {
+                  promise.reject("Biometric has error");
+                }
+              }
+            }
+          );
+        } else {
+          promise.reject("Biometric has error");
+        }
+      } else {
+        FingerprintManager fingerprintManager = (FingerprintManager) this.reactContext.getSystemService(
+            Context.FINGERPRINT_SERVICE
+          );
+        RNBioPassDialog dialog = new RNBioPassDialog(
+          this.reactContext,
+          promptText
+        );
+        dialog.authenticate(
+          fingerprintManager,
+          new RNBioPassDialog.AuthenticateCallback() {
+
+            @Override
+            public void reject(Throwable e) {
+              String replaceString = e
+                .toString()
+                .replace("java.lang.Exception: ", "");
+              promise.reject(replaceString);
+            }
+
+            @Override
+            public void resolve() {
+              try {
+                actuallyStore(password, promise);
+              } catch (Exception e) {
+                promise.reject("Fingerprint has error");
+              }
+            }
+          }
+        );
+      }
+    } catch (Exception e) {
+      promise.reject("Fingerprint has error");
+      e.printStackTrace();
+    }
+  }
+
+  //Actual Storing Logic
+  private void actuallyStore(String password, final Promise promise) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+      promise.reject(
+        "NOT_SUPPORTED",
+        "BioPass is not supported on this version of Android"
+      );
       return;
     }
 
@@ -117,28 +202,44 @@ public class RNBioPassModule extends ReactContextBaseJavaModule {
 
       if (!contains) {
         AlgorithmParameterSpec spec;
-        spec = new KeyGenParameterSpec.Builder(
-          DEFAULT_SERVICE,
-          KeyProperties.PURPOSE_DECRYPT | KeyProperties.PURPOSE_ENCRYPT)
-          .setBlockModes(ENCRYPTION_BLOCK_MODE)
-          .setEncryptionPaddings(ENCRYPTION_PADDING)
-          .setRandomizedEncryptionRequired(true)
-          .setUserAuthenticationRequired(true)
-          .build();
+        spec =
+          new KeyGenParameterSpec.Builder(
+            DEFAULT_SERVICE,
+            KeyProperties.PURPOSE_DECRYPT | KeyProperties.PURPOSE_ENCRYPT
+          )
+            .setBlockModes(ENCRYPTION_BLOCK_MODE)
+            .setEncryptionPaddings(ENCRYPTION_PADDING)
+            .setRandomizedEncryptionRequired(true)
+            .setUserAuthenticationRequired(true)
+            .setUserAuthenticationValidityDurationSeconds(30)
+            .build();
 
         KeyPairGenerator generator;
         try {
-          generator = KeyPairGenerator.getInstance(ENCRYPTION_ALGORITHM, KEYSTORE_TYPE);
+          generator =
+            KeyPairGenerator.getInstance(ENCRYPTION_ALGORITHM, KEYSTORE_TYPE);
         } catch (NoSuchAlgorithmException e) {
-          throw new PromiseRejection("NOT_SUPPORTED", "Algorithm not supported", e);
+          throw new PromiseRejection(
+            "NOT_SUPPORTED",
+            "Algorithm not supported",
+            e
+          );
         } catch (NoSuchProviderException e) {
-          throw new PromiseRejection("NOT_SUPPORTED", "Failed to find Android key store", e);
+          throw new PromiseRejection(
+            "NOT_SUPPORTED",
+            "Failed to find Android key store",
+            e
+          );
         }
 
         try {
           generator.initialize(spec);
         } catch (InvalidAlgorithmParameterException e) {
-          throw new PromiseRejection("NO_FINGERPRINT", "No fingerprint enrolled on device", e);
+          throw new PromiseRejection(
+            "NO_FINGERPRINT",
+            "No fingerprint enrolled on device",
+            e
+          );
         }
 
         generator.generateKeyPair();
@@ -148,8 +249,17 @@ public class RNBioPassModule extends ReactContextBaseJavaModule {
 
       byte[] encryptedPassword = encryptString(key, password);
 
-      SharedPreferences prefs = reactContext.getSharedPreferences(KEYCHAIN_DATA, Context.MODE_PRIVATE);
-      prefs.edit().putString(DEFAULT_SERVICE, Base64.encodeToString(encryptedPassword, Base64.DEFAULT)).apply();
+      SharedPreferences prefs = reactContext.getSharedPreferences(
+        KEYCHAIN_DATA,
+        Context.MODE_PRIVATE
+      );
+      prefs
+        .edit()
+        .putString(
+          DEFAULT_SERVICE,
+          Base64.encodeToString(encryptedPassword, Base64.DEFAULT)
+        )
+        .apply();
 
       promise.resolve(null);
     } catch (PromiseRejection e) {
@@ -160,22 +270,118 @@ public class RNBioPassModule extends ReactContextBaseJavaModule {
   @ReactMethod
   public void retreive(String promptText, final Promise promise) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-      promise.reject("NOT_SUPPORTED", "BioPass is not supported on this version of Android");
+      promise.reject(
+        "NOT_SUPPORTED",
+        "BioPass is not supported on this version of Android"
+      );
       return;
     }
 
     try {
-      FingerprintManager fingerprintManager = (FingerprintManager) this.reactContext.getSystemService(Context.FINGERPRINT_SERVICE);
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        FingerprintManagerCompat fingerprintManager = FingerprintManagerCompat.from(
+          this.reactContext
+        );
+        final BiometricManager biometricManager = BiometricManager.from(
+          this.reactContext
+        );
+        if (
+          biometricManager.canAuthenticate() ==
+          BiometricManager.BIOMETRIC_ERROR_NO_HARDWARE
+        ) {
+          throw new PromiseRejection(
+            "NOT_SUPPORTED",
+            "No Biometric reader present",
+            null
+          );
+        }
 
-      if (!fingerprintManager.isHardwareDetected()) {
-        throw new PromiseRejection("NOT_SUPPORTED", "No fingerprint reader present", null);
+        if (
+          biometricManager.canAuthenticate() ==
+          BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED
+        ) {
+          throw new PromiseRejection(
+            "NOT_SUPPORTED",
+            "No Biometric enrolled",
+            null
+          );
+        }
+
+        RNBioPrompt prompt = new RNBioPrompt(this.reactContext, promptText);
+        prompt.authenticate(
+          new RNBioPrompt.AuthenticateCallback() {
+
+            @Override
+            public void reject(Throwable e) {
+              String replaceString = e
+                .toString()
+                .replace("java.lang.Exception:", "");
+              promise.reject(replaceString);
+            }
+
+            @Override
+            public void resolve() {
+              actuallyRetrieve(promise);
+            }
+          }
+        );
+      } else {
+        FingerprintManager fingerprintManager = (FingerprintManager) this.reactContext.getSystemService(
+            Context.FINGERPRINT_SERVICE
+          );
+
+        if (!fingerprintManager.isHardwareDetected()) {
+          throw new PromiseRejection(
+            "NOT_SUPPORTED",
+            "No fingerprint reader present",
+            null
+          );
+        }
+
+        if (!fingerprintManager.hasEnrolledFingerprints()) {
+          throw new PromiseRejection(
+            "NOT_SUPPORTED",
+            "No fingerprints enrolled",
+            null
+          );
+        }
+
+        RNBioPassDialog dialog = new RNBioPassDialog(
+          this.reactContext,
+          promptText
+        );
+
+        dialog.authenticate(
+          fingerprintManager,
+          new RNBioPassDialog.AuthenticateCallback() {
+
+            @Override
+            public void reject(Throwable e) {
+              String replaceString = e
+                .toString()
+                .replace("java.lang.Exception:", "");
+              promise.reject(replaceString);
+            }
+
+            @Override
+            public void resolve() {
+              actuallyRetrieve(promise);
+            }
+          }
+        );
       }
+    } catch (PromiseRejection e) {
+      promise.reject(e.getCode(), e.getMessage(), e.getCause());
+    }
+  }
 
-      if (!fingerprintManager.hasEnrolledFingerprints()) {
-        throw new PromiseRejection("NOT_SUPPORTED", "No fingerprints enrolled", null);
-      }
-
-      SharedPreferences prefs = reactContext.getSharedPreferences(KEYCHAIN_DATA, Context.MODE_PRIVATE);
+  //Actual Retrieving Logic
+  private void actuallyRetrieve(final Promise promise) {
+    try {
+      SharedPreferences prefs = reactContext.getSharedPreferences(
+        KEYCHAIN_DATA,
+        Context.MODE_PRIVATE
+      );
 
       String encodedEncryptedPassword = prefs.getString(DEFAULT_SERVICE, null);
 
@@ -183,8 +389,10 @@ public class RNBioPassModule extends ReactContextBaseJavaModule {
         throw new PromiseRejection("NOT_FOUND", "No password stored", null);
       }
 
-      final byte[] encryptedPassword = Base64.decode(encodedEncryptedPassword, Base64.DEFAULT);
-
+      final byte[] encryptedPassword = Base64.decode(
+        encodedEncryptedPassword,
+        Base64.DEFAULT
+      );
       final KeyStore keyStore = getKeyStoreAndLoad();
       final Key key = getPrivateKeyFromKeyStore(keyStore);
       final Cipher cipher = createCipher();
@@ -195,39 +403,35 @@ public class RNBioPassModule extends ReactContextBaseJavaModule {
         throw new PromiseRejection("RUNTIME_ERROR", "Invalid key", e);
       }
 
-      RNBioPassDialog dialog = new RNBioPassDialog(this.reactContext, promptText);
+      ByteArrayInputStream inputStream = new ByteArrayInputStream(
+        encryptedPassword
+      );
+      CipherInputStream cipherInputStream = new CipherInputStream(
+        inputStream,
+        cipher
+      );
+      ByteArrayOutputStream output = new ByteArrayOutputStream();
 
-      dialog.authenticate(fingerprintManager, new FingerprintManager.CryptoObject(cipher), new RNBioPassDialog.AuthenticateCallback() {
-        @Override
-        public void resolve() {
-          try {
-            ByteArrayInputStream inputStream = new ByteArrayInputStream(encryptedPassword);
-            CipherInputStream cipherInputStream = new CipherInputStream(inputStream, cipher);
-            ByteArrayOutputStream output = new ByteArrayOutputStream();
+      byte[] buffer = new byte[1024];
 
-            byte[] buffer = new byte[1024];
+      while (true) {
+        int n;
 
-            while (true) {
-              int n;
-
-              try {
-                n = cipherInputStream.read(buffer, 0, buffer.length);
-              } catch (IOException e) {
-                throw new PromiseRejection("RUNTIME_ERROR", "Failed to decrypt", e);
-              }
-
-              if (n <= 0) {
-                break;
-              }
-              output.write(buffer, 0, n);
-            }
-
-            promise.resolve(new String(output.toByteArray(), Charset.forName("UTF-8")));
-          } catch (PromiseRejection e) {
-            promise.reject(e.getCode(), e.getMessage(), e.getCause());
-          }
+        try {
+          n = cipherInputStream.read(buffer, 0, buffer.length);
+        } catch (IOException e) {
+          throw new PromiseRejection("RUNTIME_ERROR", "Failed to decrypt", e);
         }
-      });
+
+        if (n <= 0) {
+          break;
+        }
+        output.write(buffer, 0, n);
+      }
+
+      promise.resolve(
+        new String(output.toByteArray(), Charset.forName("UTF-8"))
+      );
     } catch (PromiseRejection e) {
       promise.reject(e.getCode(), e.getMessage(), e.getCause());
     }
@@ -236,12 +440,18 @@ public class RNBioPassModule extends ReactContextBaseJavaModule {
   @ReactMethod
   public void delete(final Promise promise) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-      promise.reject("NOT_SUPPORTED", "BioPass is not supported on this version of Android");
+      promise.reject(
+        "NOT_SUPPORTED",
+        "BioPass is not supported on this version of Android"
+      );
       return;
     }
 
     try {
-      SharedPreferences prefs = reactContext.getSharedPreferences(KEYCHAIN_DATA, Context.MODE_PRIVATE);
+      SharedPreferences prefs = reactContext.getSharedPreferences(
+        KEYCHAIN_DATA,
+        Context.MODE_PRIVATE
+      );
 
       prefs.edit().remove(DEFAULT_SERVICE).apply();
 
@@ -276,11 +486,18 @@ public class RNBioPassModule extends ReactContextBaseJavaModule {
     try {
       encodedValue = value.getBytes("UTF-8");
     } catch (UnsupportedEncodingException e) {
-      throw new PromiseRejection("RUNTIME_ERROR", "Unsupported encoding: UTF-8", e);
+      throw new PromiseRejection(
+        "RUNTIME_ERROR",
+        "Unsupported encoding: UTF-8",
+        e
+      );
     }
 
     // encrypt the value using a CipherOutputStream
-    CipherOutputStream cipherOutputStream = new CipherOutputStream(outputStream, cipher);
+    CipherOutputStream cipherOutputStream = new CipherOutputStream(
+      outputStream,
+      cipher
+    );
 
     try {
       cipherOutputStream.write(encodedValue);
@@ -298,19 +515,28 @@ public class RNBioPassModule extends ReactContextBaseJavaModule {
     try {
       keyStore = KeyStore.getInstance(KEYSTORE_TYPE);
     } catch (KeyStoreException e) {
-      throw new PromiseRejection("NOT_SUPPORTED", "Could not access Android key store", e);
+      throw new PromiseRejection(
+        "NOT_SUPPORTED",
+        "Could not access Android key store",
+        e
+      );
     }
 
     try {
       keyStore.load(null);
     } catch (NoSuchAlgorithmException | CertificateException | IOException e) {
-      throw new PromiseRejection("NOT_SUPPORTED", "Could not load the Android key store", e);
+      throw new PromiseRejection(
+        "NOT_SUPPORTED",
+        "Could not load the Android key store",
+        e
+      );
     }
 
     return keyStore;
   }
 
-  private PrivateKey getPrivateKeyFromKeyStore(KeyStore keyStore) throws PromiseRejection {
+  private PrivateKey getPrivateKeyFromKeyStore(KeyStore keyStore)
+    throws PromiseRejection {
     try {
       return (PrivateKey) keyStore.getKey(DEFAULT_SERVICE, null);
     } catch (KeyStoreException e) {
@@ -322,10 +548,13 @@ public class RNBioPassModule extends ReactContextBaseJavaModule {
     }
   }
 
-  private PublicKey getPublicKeyFromKeyStore(KeyStore keyStore) throws PromiseRejection {
+  private PublicKey getPublicKeyFromKeyStore(KeyStore keyStore)
+    throws PromiseRejection {
     try {
       KeyFactory keyFactory = KeyFactory.getInstance(ENCRYPTION_ALGORITHM);
-      PublicKey publicKey = keyStore.getCertificate(DEFAULT_SERVICE).getPublicKey();
+      PublicKey publicKey = keyStore
+        .getCertificate(DEFAULT_SERVICE)
+        .getPublicKey();
       KeySpec spec = new X509EncodedKeySpec(publicKey.getEncoded());
       return keyFactory.generatePublic(spec);
     } catch (KeyStoreException e) {
@@ -333,13 +562,23 @@ public class RNBioPassModule extends ReactContextBaseJavaModule {
     } catch (NoSuchAlgorithmException e) {
       throw new PromiseRejection("NOT_SUPPORTED", "Algorithm not supported", e);
     } catch (InvalidKeySpecException e) {
-      throw new PromiseRejection("RUNTIME_ERROR", "Invalid key specification", e);
+      throw new PromiseRejection(
+        "RUNTIME_ERROR",
+        "Invalid key specification",
+        e
+      );
     }
   }
 
   private Cipher createCipher() throws PromiseRejection {
     try {
-      return Cipher.getInstance(ENCRYPTION_ALGORITHM + "/" + ENCRYPTION_BLOCK_MODE + "/" + ENCRYPTION_PADDING);
+      return Cipher.getInstance(
+        ENCRYPTION_ALGORITHM +
+        "/" +
+        ENCRYPTION_BLOCK_MODE +
+        "/" +
+        ENCRYPTION_PADDING
+      );
     } catch (NoSuchAlgorithmException e) {
       throw new PromiseRejection("NOT_SUPPORTED", "Algorithm not supported", e);
     } catch (NoSuchPaddingException e) {

@@ -34,4 +34,5 @@ repositories {
 dependencies {
     compile 'com.facebook.react:react-native:+'
     compile 'com.android.support:design:27.1.1'
+    implementation 'androidx.biometric:biometric:1.0.1'
 }
