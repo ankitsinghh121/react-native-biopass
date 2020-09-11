@@ -44,7 +44,9 @@ import com.facebook.react.ReactRootView;
 import com.facebook.react.ReactInstanceManager;
 
 public class MainActivity extends AppCompatActivity {
+
     private ReactInstanceManager mReactInstanceManager;
+    
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
