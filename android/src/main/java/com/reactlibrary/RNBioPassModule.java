@@ -315,7 +315,7 @@ public class RNBioPassModule extends ReactContextBaseJavaModule {
             public void reject(Throwable e) {
               String replaceString = e
                 .toString()
-                .replace("java.lang.Exception:", "");
+                .replace("java.lang.Exception: ", "");
               promise.reject(replaceString);
             }
 
@@ -359,7 +359,7 @@ public class RNBioPassModule extends ReactContextBaseJavaModule {
             public void reject(Throwable e) {
               String replaceString = e
                 .toString()
-                .replace("java.lang.Exception:", "");
+                .replace("java.lang.Exception: ", "");
               promise.reject(replaceString);
             }
 

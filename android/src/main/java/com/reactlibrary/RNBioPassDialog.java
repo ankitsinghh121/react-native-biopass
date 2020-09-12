@@ -14,9 +14,6 @@ import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.hardware.fingerprint.FingerprintManager;
 import android.os.CancellationSignal;
-import com.google.android.material.bottomsheet.BottomSheetDialog;
-import androidx.core.content.ContextCompat;
-import androidx.core.widget.ImageViewCompat;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -25,12 +22,15 @@ import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import androidx.core.content.ContextCompat;
+import androidx.core.widget.ImageViewCompat;
 import com.facebook.react.bridge.ActivityEventListener;
 import com.facebook.react.bridge.Callback;
 import com.facebook.react.bridge.Promise;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
 import com.facebook.react.bridge.ReactMethod;
+import com.google.android.material.bottomsheet.BottomSheetDialog;
 import java.lang.Math;
 import java.lang.Runnable;
 
@@ -232,8 +232,10 @@ public class RNBioPassDialog
 
           public void onClick(View v) {
             // Perform action on click
-            cancellationSignal.cancel();
-            cancellationSignal = null;
+            if (cancellationSignal != null) {
+              cancellationSignal.cancel();
+              cancellationSignal = null;
+            }
             dialog.hide();
           }
         }

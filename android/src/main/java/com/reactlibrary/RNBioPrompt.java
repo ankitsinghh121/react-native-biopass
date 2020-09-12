@@ -10,7 +10,6 @@ import android.content.pm.PackageManager;
 import android.content.pm.PackageManager;
 import android.os.Build.VERSION;
 import android.os.Build.VERSION_CODES;
-import android.os.CancellationSignal;
 import androidx.biometric.BiometricPrompt;
 import androidx.core.content.ContextCompat;
 import androidx.fragment.app.FragmentActivity;
@@ -70,7 +69,6 @@ public class RNBioPrompt extends ReactContextBaseJavaModule {
         @Override
         public void run() {
           try {
-            final CancellationSignal cancellationSignal = new CancellationSignal();
             Executor executor = ContextCompat.getMainExecutor(activity);
             final BiometricPrompt biometricPrompt = new BiometricPrompt(
               fragmentActivity,
@@ -106,7 +104,9 @@ public class RNBioPrompt extends ReactContextBaseJavaModule {
               .setDeviceCredentialAllowed(true)
               .build();
             biometricPrompt.authenticate(promptInfo);
-          } catch (Exception e) {}
+          } catch (Exception e) {
+            callback.reject(e);
+          }
         }
       }
     );
