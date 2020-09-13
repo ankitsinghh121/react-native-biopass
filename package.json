@@ -1,16 +1,28 @@
 {
   "name": "react-native-biopass-updated",
-  "version": "1.0.0-alpha.1",
+  "version": "1.0.0-alpha.2",
   "license": "MIT",
-  "repository": "ankitsinghh121/react-native-biopass-updated",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ankitsinghh121/react-native-biopass-updated.git"
+  },
   "keywords": [
     "face-id",
     "fingerprint",
     "keystore",
     "react-native",
-    "touch-id"
+    "touch-id",
+    "passcode fallback",
+    "device credentials"
   ],
   "peerDependencies": {
     "react-native": ">=0.60"
-  }
+  },
+  "description": "Store a password behind biometric authentication.",
+  "bugs": {
+    "url": "https://github.com/ankitsinghh121/react-native-biopass-updated/issues"
+  },
+  "homepage": "https://github.com/ankitsinghh121/react-native-biopass-updated#readme",
+  "main": "index.js",
+  "author": "Ankit Singh"
 }
