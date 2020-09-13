@@ -323,7 +323,7 @@ public class RNBioPassDialog
       } else if (resultCode == Activity.RESULT_CANCELED) {
         this.callback.reject(
             new Exception(
-              "Unable to verify identity, Unable to register for Quick Balance"
+              "Unable to verify your identity"
             )
           );
       }
